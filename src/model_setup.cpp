@@ -3,17 +3,20 @@
 
 // C++ standard libraries
 #include <iostream>         // For std::cout, std::endl
+#include <stdexcept>
 
 // External libraries
 #include "I_O/node_info.hpp"
 #include "I_O/output_series.hpp"
 #include "I_O/inputs.hpp"
 #include "I_O/config_loader.hpp"
+#include "models/reservoir_state.hpp"
 
 
 /**
  * @brief Sets up the model by loading configuration, node levels, initial conditions,
  * boundary conditions, runoff data, and output options.    
+ * and reservoir states if needed.
  */
 ModelSetup setupModel(const char* config_path) {
     ModelSetup setup;
@@ -51,10 +54,12 @@ ModelSetup setupModel(const char* config_path) {
     }
     std::cout << "completed!" << std::endl;
 
-    // Check if reservoir routing is needed
-    // This is a placeholder for future implementation
-    std::cout << "Checking if reservoir routing is needed (placeholder)...";
-    std::cout << "completed!" << std::endl;
+    // // Check if reservoir routing is needed
+    // // This is a placeholder for future implementation
+    // std::cout << "Checking if reservoir routing is needed (placeholder)...";
+    // std::cout << "completed!" << std::endl;
+    // -------------------------------------- RESERVOIR ROUTING SETUP --------------------------------------
+
 
 
     //Get runoff chunk info

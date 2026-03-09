@@ -15,6 +15,11 @@
  * - level: The level of the node in the hierarchy.
  * - parents: A vector of indices representing parent nodes.
  * - params: A vector of parameters associated with the node.
+ * Below are added info for reservoir routing:
+ * - res_id: GDW reservoir ID associated with this node (0 if none).
+ * - res_inflow_flag: True if this node is an inflow link to a reservoir.
+ * - res_outflow_flag: True if this node is the outflow link from a reservoir.
+ * - res_within_flag: True if this node lies purely within a reservoir.
  */
 struct NodeInfo {
     size_t index;
@@ -22,6 +27,12 @@ struct NodeInfo {
     size_t level;
     std::vector<size_t> parents;
     std::vector<double> params;
+
+    // Reservoir routing info
+    int res_id = 0;    // GDW reservoir ID (0 if not associated with a reservoir)
+    bool res_inflow_flag = false;    // True if this node is an inflow link to a reservoir
+    bool res_outflow_flag = false;   // True if this node is the outflow link from a reservoir
+    bool res_within_flag = false;    // True if this node lies purely within a reservoir (not inflow or outflow)
 };
 
 // Function declaration

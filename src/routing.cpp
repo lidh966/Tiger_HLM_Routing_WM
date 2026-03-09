@@ -13,10 +13,13 @@ using namespace boost::numeric::odeint;
 #include "I_O/inputs.hpp"
 #include "models/RHS.hpp"
 #include "utils/time.hpp"
+#include "models/reservoir_state.hpp"
+#include "models/reservoir_operation_rules.hpp"
 
 //--------------------------------------------------------------------------------------------------
 // Function Definitions
 //--------------------------------------------------------------------------------------------------
+
 /**
  * @brief Writes the output results to netCDF files.
  * This function writes the final time step as a snapshot and also writes time series data based on user-defined criteria.
@@ -128,6 +131,120 @@ void writeOutput(const ModelSetup& setup,
     std::cout << "completed!" << std::endl;
 }
 
+static ReservoirStateMap buildReservoirStates(const ModelSetup& setup) {
+    ReservoirStateMap reservoir_states;  
+    std::cout << "Setting up reservoir routing...";
+
+    if (setup.config.reservoir_routing_flag == 1) {
+        for (const auto& [index, node] : setup.node_map) {
+            if (node.res_id == 0) continue;
+
+            if (reservoir_states.find(node.res_id) == reservoir_states.end()) {
+                ReservoirState rs;
+                rs.res_id = node.res_id;
+                reservoir_states[node.res_id] = rs;
+            }
+
+            ReservoirState& rs = reservoir_states[node.res_id];
+
+            if (node.res_inflow_flag) {
+                rs.inflow_node_indices.push_back(node.index);
+            }
+
+            if (node.res_outflow_flag) {
+                if (rs.outflow_node_set) throw std::runtime_error(
+                    "Multiple outflow nodes for reservoir ID " + std::to_string(node.res_id));
+                rs.outflow_node_index = node.index;
+                rs.outflow_node_set = true;
+            }
+        }
+
+        validateReservoirStates(reservoir_states);
+
+        // Initialize reservoir storage from user input (constant or file)
+        auto resStorageIni = loadInitialConditions(
+            setup.config.reservoir_initial_storage_flag,
+            setup.config.reservoir_initial_storage_value,       
+            setup.config.reservoir_initial_storage_filename,
+            setup.config.reservoir_initial_storage_varname,
+            setup.config.reservoir_initial_storage_id_varname);
+
+        for (auto& [res_id, rs] : reservoir_states) {
+            rs.storage = resStorageIni(res_id);
+        }
+
+        std::cout << "completed! " << reservoir_states.size() << " reservoir(s) found." << std::endl;
+    } else {
+        std::cout << "Reservoir routing not enabled." << std::endl;
+    }
+
+    return reservoir_states;  // was missing
+}
+
+
+/**
+ * @brief Computes the outflow series and updates storage for a single reservoir.
+ *
+ * Called when the outflow node for this reservoir is being processed.
+ * All inflow nodes must already be integrated (guaranteed by level ordering).
+ *
+ * Storage update (explicit):
+ *   storage_{t+1} = storage_t + (inflow_t - outflow_t) * dt_seconds
+ *
+ * @param rs              Reservoir state (storage updated in-place).
+ * @param results         Full results vector (inflow node series read from here).
+ * @param n_steps         Number of time steps in this chunk.
+ * @param dt_min          Integration time step in minutes.
+ * @param month           Calendar month [1–12] at the start of this chunk.
+ * @return                Outflow time series (m³/s), length n_steps.
+ */
+static std::vector<float> computeReservoirOutflow(ReservoirState& rs,
+                                                   const std::vector<float>& results,    // kept for future optimization - summing inflow links
+                                                   const std::vector<float>& inflow_simple,    // simple inflow series from parents
+                                                   size_t n_steps,
+                                                   double dt_min,
+                                                   int month)
+{
+    const double dt_sec = dt_min * 60.0;
+
+    // // TODO: Sum inflow from all inflow nodes at each time step
+    // std::vector<float> inflow(n_steps, 0.0f);
+    // for (size_t inflow_idx : rs.inflow_node_indices) {
+    //     for (size_t t = 0; t < n_steps; ++t) {
+    //         inflow[t] += results[inflow_idx * n_steps + t];
+    //     }
+    // }
+
+    std::vector<float> inflow = inflow_simple; // currently inflow_simple is just the sum of parent inflows, but this allows for future adjustments (e.g. BC) without changing the function signature
+
+    // Compute outflow series and update storage
+    rs.storage_series.resize(n_steps);
+    std::vector<float> outflow(n_steps);
+
+    for (size_t t = 0; t < n_steps; ++t) {
+        // Month is assumed constant within a chunk; for finer granularity,
+        // pass a per-step month vector here.
+        float q_out = applyReservoirRule(rs.res_id, 
+            inflow[t] * 86400.0f,    // convert m³/s to m³/day for the rule function
+            rs.storage, month);
+        outflow[t]  = q_out / 86400.0f;    // convert outflow back to m³/s for results
+
+        // Explicit storage update
+        rs.storage += static_cast<float>((inflow[t] - outflow[t]) * dt_sec);
+
+        // adjust outflow is storage goes negative (clamp outflow to available storage)
+        if (rs.storage < 0.0f) {
+            outflow[t] += rs.storage / dt_sec;     // reduce outflow to prevent negative storage
+            rs.storage = 0.0f;     // clamp storage to zero
+        }
+
+        rs.storage_series[t] = rs.storage;
+    }
+
+    return outflow;
+}
+
+
 /**
  * @brief Integrates the ODEs for each link at a given level.
  * This function uses OpenMP to parallelize the integration process for each link.
@@ -135,23 +252,27 @@ void writeOutput(const ModelSetup& setup,
  * 
  * @param setup The model setup containing configuration and node information.
  * @param runoff The runoff data for the current time chunk.
- * @param results The results vector to store the integrated values for each link.          
+ * @param results The results vector to store the integrated values for each link.   
+ * @param reservoir_states Reservoir states (write: storage updated for outflow nodes).       
  * @param level The current level of links being processed.
  * @param nodes_at_level The vector of node indices at the current level.   
  * @param n_steps The number of time steps in the simulation.
  * @param total_time_steps The total number of time steps processed so far.
  * @param tc The current time chunk index.
  * @param q_final The vector to store final results for each link.
+ * @param month The calendar month [1–12] at the start of this chunk (used for reservoir rules). NOTE: this assumes month is constant within a chunk; for finer granularity, pass a per-step month vector here.
  */
 void IntegrateLinksAtLevel(const ModelSetup& setup,
                            const RunoffData& runoff,
                            std::vector<float>& results,
+                           ReservoirStateMap& reservoir_states,
                            size_t level,
                            const std::vector<size_t>& nodes_at_level,
                            size_t n_steps,
                            size_t total_time_steps,
                            size_t tc,
-                           std::vector<float>& q_final)
+                           std::vector<float>& q_final,
+                           int month)
 {   
     // Prefine items for solver
     auto rk45_dopri_stepper = make_controlled(setup.config.atol, 
@@ -250,12 +371,71 @@ void IntegrateLinksAtLevel(const ModelSetup& setup,
                                 callback);
             }   
         }else{
-            // Placeholder for reservoir routing logic
-            //exit code with failure
-            std::cerr << "Reservoir routing is not implemented yet. Exiting..." << std::endl;
-            exit(EXIT_FAILURE);
-        }
+            // ---- Reservoir routing
+            // Normal river nodes (res_id == 0) and res_inflow_flag nodes fall through
+            // directly to ODE integration below — their y_p_series is already correct.
 
+            // ---- within nodes: skip (placeholder for rainfall-on-reservoir) ----
+            if (node.res_within_flag) {
+                // TODO: add rainfall-on-reservoir area logic here.
+                continue;
+            }
+
+            // ---- outflow node: override y_p_series with reservoir outflow ----
+            if (node.res_outflow_flag) {
+                #pragma omp critical
+                {
+                    ReservoirState& rs = reservoir_states[node.res_id];
+
+                    y_p_series = computeReservoirOutflow(rs, results, y_p_series, n_steps,
+                                                        setup.config.dt, month);    // this approach assumes routing within reservoir
+                }
+                y_p_resolution = setup.config.dt;
+            }
+
+            // ---- inflow nodes, outflow nodes, and normal river nodes all 
+            //      proceed with ODE integration. For inflow/normal: y_p_series 
+            //      is from parent flows or BCs (set above). For outflow: 
+            //      y_p_series was just overridden above. ----
+            double q0;
+            if (tc == 0) {
+                q0 = setup.uini(node.stream_id);
+            } else {
+                q0 = q_final[node.index];
+                if (q0 <= 0.0) {
+                    std::cerr << "Warning: Initial discharge for link "
+                            << node.index << " is non-positive." << std::endl;
+                    exit(EXIT_FAILURE);
+                }
+            }
+
+            const double A_h      = node.params[0];
+            const double L_i      = node.params[1];
+            const double lambda_1 = node.params[2];
+            const double v_0      = node.params[3];
+            const double invtau   = 60.0 * v_0 / ((1.0 - lambda_1) * L_i);
+
+            const size_t runoff_index = runoff.idToIndex.at(node.stream_id);
+            const float* runoff_ptr   = &runoff.data[runoff_index * runoff.nTime];
+
+            auto callback = [&](const double& x, const double t) {
+                size_t step_idx = static_cast<size_t>(t / setup.config.dt);
+                if (step_idx >= n_steps) step_idx = n_steps - 1;
+                results[node.index * n_steps + step_idx] = std::max(x, 1e-8);
+            };
+
+            RHS rhs(runoff_ptr, setup.config.runoff_resolution,
+                    y_p_series, y_p_resolution,
+                    A_h, lambda_1, invtau);
+
+            if (level <= setup.config.rk4_level) {
+                integrate_const(rk4_stepper, rhs, q0, start_time, end_time,
+                                setup.config.dt, callback);
+            } else {
+                integrate_const(rk45_dopri_stepper, rhs, q0, start_time, end_time,
+                                setup.config.dt, callback);
+            }
+        }
     }
 }
 
@@ -272,6 +452,7 @@ void IntegrateLinksAtLevel(const ModelSetup& setup,
  */
 
 void ProcessChunk(const ModelSetup& setup, 
+                  ReservoirStateMap& reservoir_states,
                   size_t tc, 
                   size_t& total_time_steps, 
                   std::vector<float>& q_final,
@@ -286,6 +467,9 @@ void ProcessChunk(const ModelSetup& setup,
     //Compute starttime for this chunk
     std::string time_string = addTimeDelta(setup.config.start_date, setup.config.calendar, total_time_steps); //time string to store the start time for this chunk
     std::cout << "  Start time for this chunk: " << time_string << std::endl;
+
+    // Derive calendar month
+    int month = getMonthFromTimeDelta(setup.config.start_date, setup.config.calendar, total_time_steps);
 
     // ----------------- RUNOFF DATA --------------------------------------
     std::cout << "  Reading in runoff from netcdf file: " << setup.runoff_info.filenames[tc] << "...";
@@ -333,7 +517,9 @@ void ProcessChunk(const ModelSetup& setup,
     auto solve_start = std::chrono::high_resolution_clock::now();
     // Loop through each level and process nodes
     for (const auto& [level, nodes_at_level] : setup.level_groups) {
-        IntegrateLinksAtLevel(setup, runoff, results, level, nodes_at_level, n_steps, total_time_steps, tc, q_final);
+        IntegrateLinksAtLevel(setup, runoff, results, reservoir_states,
+                      level, nodes_at_level, n_steps,
+                      total_time_steps, tc, q_final, month);  
     }
     std::cout << "completed!" << std::endl;
     auto solve_end = std::chrono::high_resolution_clock::now();
@@ -365,6 +551,9 @@ void runRouting(const ModelSetup& setup){
     std::cout << "_________________STARTING ROUTING_________________ \n" << std::endl;
     std::vector<float> q_final(setup.n_links); //define q_final to store final results for each link
 
+    // Initialize reservoir states if needed
+    ReservoirStateMap reservoir_states = buildReservoirStates(setup);
+
     //reserving max size up front
     size_t max_size = static_cast<size_t>(setup.config.chunk_size * setup.config.runoff_resolution * setup.n_links / setup.config.dt);
     std::vector<float> results;          // declare the vector
@@ -374,7 +563,7 @@ void runRouting(const ModelSetup& setup){
     size_t total_time_steps = 0; // keep tract of total simulation time
     size_t startIndex = 0; // start index for the first chunk
     for(int tc = 0; tc < setup.runoff_info.nchunks; ++tc){
-        ProcessChunk(setup, tc, total_time_steps, q_final, startIndex, results);
+        ProcessChunk(setup, reservoir_states, tc, total_time_steps, q_final, startIndex, results);
     }
     std::cout << "__________________________________________________ \n" << std::endl;
 }

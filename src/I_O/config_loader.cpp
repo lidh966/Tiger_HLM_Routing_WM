@@ -313,7 +313,11 @@ ModelConfig ConfigLoader::loadConfig(const std::string& filename) {
 
     // Load reservoir routing
     config.reservoir_routing_flag = parser.getInt("reservoir.flag");
-    config.reservoir_file = parser.getString("reservoir.res_file");
+    config.reservoir_initial_storage_flag = parser.getInt("reservoir.initial_storage_flag");
+    config.reservoir_initial_storage_value = parser.getDouble("reservoir.initial_storage_value", 0.0);
+    config.reservoir_initial_storage_filename = parser.getString("reservoir.initial_storage_filename");
+    config.reservoir_initial_storage_varname = parser.getString("reservoir.initial_storage_varname");
+    config.reservoir_initial_storage_id_varname = parser.getString("reservoir.initial_storage_id_varname");
     
     // Load runoff parameters
     config.runoff_resolution = parser.getInt("runoff.resolution");

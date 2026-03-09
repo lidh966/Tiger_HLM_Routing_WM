@@ -26,8 +26,12 @@ boundary_conditions:
   resolution: 0
 
 reservoir:
-  flag: 0 # 0 = no reservoirs, 1 use reservoirs
-  res_file: '' #list of IDs which have reservoirs
+  flag: 0                     # 0 = no reservoirs, 1 = use reservoirs
+  initial_storage_flag: 0     # 0 = constant, 1 = from netcdf (same pattern as initial_conditions)
+  initial_storage_value: 0.0  # constant initial storage in m³ (only for flag 0)
+  initial_storage_filename: ""     # only for flag 1
+  initial_storage_varname: ""      # only for flag 1
+  initial_storage_id_varname: ""   # only for flag 1
 
 runoff:
   folder: "./data/runoff/" # specify path to list of files

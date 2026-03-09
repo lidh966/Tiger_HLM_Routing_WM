@@ -12,11 +12,13 @@
 #include "I_O/output_series.hpp"
 #include "I_O/inputs.hpp"
 #include "I_O/config_loader.hpp"
+#include "models/reservoir_state.hpp"
 
 /**
  * @brief Struct to hold the model setup information.
  * This includes configuration, node information, boundary conditions,
  * runoff information, and save information.
+ * reservoir information added.
  */
 struct ModelSetup {
     ModelConfig config;

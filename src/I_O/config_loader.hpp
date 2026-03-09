@@ -40,8 +40,12 @@ struct ModelConfig {
     std::string boundary_conditions_id_varname;
 
     // Reservoirs
-    int reservoir_routing_flag; // 0 for no reservoir routing, 1 for reservoir routing
-    std::string reservoir_file; // file containing reservoir data if reservoir routing is used
+    int reservoir_routing_flag;
+    int reservoir_initial_storage_flag;
+    float reservoir_initial_storage_value;
+    std::string reservoir_initial_storage_filename;
+    std::string reservoir_initial_storage_varname;
+    std::string reservoir_initial_storage_id_varname;
 
     // Runoff
     int runoff_resolution; // resolution in minutes (user input)
