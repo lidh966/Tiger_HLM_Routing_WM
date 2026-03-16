@@ -149,3 +149,76 @@ void write_snapshot_netcdf(const std::string& filename,
     // Close file
     NC_CHECK(nc_close(ncid));
 }
+
+
+void write_reservoir_netcdf(const std::string& filename,
+                            const float* storage,
+                            const float* outflow,
+                            const int* time_vals,
+                            const int* resid_vals,
+                            int n_steps,
+                            int n_reservoirs,
+                            const std::string& calendar_str,
+                            const std::string& time_string,
+                            int compression_level) {
+
+    int ncid, res_dimid, time_dimid;
+    int res_varid, time_varid, storage_varid, outflow_varid;
+
+    // Create file
+    NC_CHECK(nc_create(filename.c_str(), NC_CLOBBER | NC_NETCDF4, &ncid));
+
+    // Define dimensions
+    NC_CHECK(nc_def_dim(ncid, "ReservoirID", n_reservoirs, &res_dimid));
+    NC_CHECK(nc_def_dim(ncid, "time",        n_steps,       &time_dimid));
+
+    // Define coordinate variables
+    NC_CHECK(nc_def_var(ncid, "ReservoirID", NC_INT, 1, &res_dimid,  &res_varid));
+    NC_CHECK(nc_def_var(ncid, "time",        NC_INT, 1, &time_dimid, &time_varid));
+
+    // Define data variables (time × reservoir)
+    int dims[2] = {time_dimid, res_dimid};
+    NC_CHECK(nc_def_var(ncid, "storage", NC_FLOAT, 2, dims, &storage_varid));
+    NC_CHECK(nc_def_var(ncid, "outflow", NC_FLOAT, 2, dims, &outflow_varid));
+
+    // Compression
+    if (compression_level > 0) {
+        NC_CHECK(nc_def_var_deflate(ncid, storage_varid, 1, 1, compression_level));
+        NC_CHECK(nc_def_var_deflate(ncid, outflow_varid, 1, 1, compression_level));
+    }
+
+    // Attributes — coordinate variables
+    NC_CHECK(nc_put_att_text(ncid, res_varid, "long_name",
+        strlen("GDW reservoir ID"), "GDW reservoir ID"));
+    NC_CHECK(nc_put_att_text(ncid, time_varid, "long_name",
+        strlen("Time"), "Time"));
+    std::string time_units = "minutes since " + time_string;
+    NC_CHECK(nc_put_att_text(ncid, time_varid, "units",
+        time_units.size(), time_units.c_str()));
+    NC_CHECK(nc_put_att_text(ncid, time_varid, "calendar",
+        calendar_str.size(), calendar_str.c_str()));
+
+    // Attributes — data variables
+    NC_CHECK(nc_put_att_text(ncid, storage_varid, "long_name",
+        strlen("Reservoir storage"), "Reservoir storage"));
+    NC_CHECK(nc_put_att_text(ncid, storage_varid, "units",
+        strlen("m^3"), "m^3"));
+    NC_CHECK(nc_put_att_text(ncid, outflow_varid, "long_name",
+        strlen("Reservoir outflow"), "Reservoir outflow"));
+    NC_CHECK(nc_put_att_text(ncid, outflow_varid, "units",
+        strlen("m^3/s"), "m^3/s"));
+
+    // End define mode
+    NC_CHECK(nc_enddef(ncid));
+
+    // Write coordinate variables
+    NC_CHECK(nc_put_var_int(ncid, res_varid,  resid_vals));
+    NC_CHECK(nc_put_var_int(ncid, time_varid, time_vals));
+
+    // Write data
+    NC_CHECK(nc_put_var_float(ncid, storage_varid, storage));
+    NC_CHECK(nc_put_var_float(ncid, outflow_varid, outflow));
+
+    // Close
+    NC_CHECK(nc_close(ncid));
+}

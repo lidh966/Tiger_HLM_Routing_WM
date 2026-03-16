@@ -31,7 +31,7 @@ reservoir:
   initial_storage_value: 0.0  # constant initial storage in m³ (only for flag 0)
   initial_storage_filename: ""     # only for flag 1
   initial_storage_varname: ""      # only for flag 1
-  initial_storage_id_varname: ""   # only for flag 1
+  initial_storage_id_varname: ""   # only for flag 1 - ID here should be GDW ID
 
 runoff:
   folder: "./data/runoff/" # specify path to list of files

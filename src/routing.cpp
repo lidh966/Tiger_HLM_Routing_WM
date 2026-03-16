@@ -219,6 +219,8 @@ static std::vector<float> computeReservoirOutflow(ReservoirState& rs,
 
     // Compute outflow series and update storage
     rs.storage_series.resize(n_steps);
+    rs.outflow_series.resize(n_steps);
+
     std::vector<float> outflow(n_steps);
 
     for (size_t t = 0; t < n_steps; ++t) {
@@ -239,6 +241,7 @@ static std::vector<float> computeReservoirOutflow(ReservoirState& rs,
         }
 
         rs.storage_series[t] = rs.storage;
+        rs.outflow_series[t] = outflow[t];
     }
 
     return outflow;
@@ -440,6 +443,62 @@ void IntegrateLinksAtLevel(const ModelSetup& setup,
 }
 
 /**
+ * @brief Writes reservoir storage and outflow time series to a netCDF file.
+ * Called once per chunk after IntegrateLinksAtLevel has populated
+ * storage_series and outflow_series in each ReservoirState.
+ *
+ * @param setup            Model setup (config, calendar, filepath).
+ * @param reservoir_states Reservoir states with populated series.
+ * @param sim_times        Output time points (minutes) for this chunk.
+ * @param time_string      Chunk start-time string used as filename suffix.
+ */
+static void writeReservoirOutput(const ModelSetup& setup,
+                                  const ReservoirStateMap& reservoir_states,
+                                  const std::vector<int>& sim_times,
+                                  const std::string& time_string)
+{
+    if (setup.config.reservoir_routing_flag != 1 || reservoir_states.empty()) return;
+
+    std::cout << "  Writing reservoir storage and outflow to netcdf...";
+
+    const size_t n_res        = reservoir_states.size();
+    const size_t n_steps_full = reservoir_states.begin()->second.storage_series.size();
+    const size_t output_res_steps = static_cast<size_t>(setup.config.output_resolution / setup.config.dt);
+    const size_t n_saved_steps    = (n_steps_full + output_res_steps - 1) / output_res_steps;
+
+    std::vector<float> compacted_storage(n_saved_steps * n_res);
+    std::vector<float> compacted_outflow(n_saved_steps * n_res);
+    std::vector<int>   res_ids(n_res);
+
+    size_t j = 0;
+    for (const auto& [res_id, rs] : reservoir_states) {
+        res_ids[j] = res_id;
+        for (size_t i = 0; i < n_saved_steps; ++i) {
+            size_t t = i * output_res_steps;
+            if (t >= n_steps_full) t = n_steps_full - 1;
+            compacted_storage[i * n_res + j] = rs.storage_series[t];
+            compacted_outflow[i * n_res + j] = rs.outflow_series[t];
+        }
+        ++j;
+    }
+
+    std::string res_filename = setup.config.series_filepath + "_reservoirs_" + time_string + ".nc";
+    write_reservoir_netcdf(res_filename,
+                           compacted_storage.data(),
+                           compacted_outflow.data(),
+                           sim_times.data(),
+                           res_ids.data(),
+                           static_cast<int>(n_saved_steps),
+                           static_cast<int>(n_res),
+                           setup.config.calendar,
+                           time_string);
+
+    std::cout << "completed!" << std::endl;
+}
+
+
+
+/**
  * @brief Processes a single chunk of runoff data.
  * This function reads runoff data from a netCDF file, sets up the time series, initializes the results matrix,
  * and integrates the ODEs for each link at different levels.
@@ -469,7 +528,7 @@ void ProcessChunk(const ModelSetup& setup,
     std::cout << "  Start time for this chunk: " << time_string << std::endl;
 
     // Derive calendar month
-    int month = getMonthFromTimeDelta(setup.config.start_date, setup.config.calendar, total_time_steps);
+    int month = getMonth(time_string, setup.config.calendar);
 
     // ----------------- RUNOFF DATA --------------------------------------
     std::cout << "  Reading in runoff from netcdf file: " << setup.runoff_info.filenames[tc] << "...";
@@ -532,6 +591,7 @@ void ProcessChunk(const ModelSetup& setup,
     // -----------OUTPUT --------------------------------------------
     auto write_start = std::chrono::high_resolution_clock::now();
     writeOutput(setup, results, n_steps, sim_times, q_final, time_string);
+    writeReservoirOutput(setup, reservoir_states, sim_times, time_string);
     auto write_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> write_elapsed = write_end - write_start;
     std::cout << "  Total write time: " << write_elapsed.count() << " seconds" << std::endl;

@@ -11,3 +11,6 @@ std::string formatTime(const std::tm& tm);
 
 // Adds a delta in minutes to the start time using "julian" or "no_leap" calendar
 std::string addTimeDelta(const std::string& start, const std::string& calendar, int deltaMinutes);
+
+// Extracts the calendar month (1-12) from a datetime string based on the calendar type
+int getMonth(const std::string& datetime, const std::string& calendar);

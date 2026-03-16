@@ -29,6 +29,7 @@ struct ReservoirState {
 
     // Output time series for the current chunk (sized to n_steps each chunk)
     std::vector<float> storage_series;
+    std::vector<float> outflow_series;
 };
 
 /**

@@ -54,3 +54,28 @@ void write_snapshot_netcdf(const std::string& filename,
                         const int* linkid_vals,         
                         int n_links,
                         int compression_level = 0);
+
+/**
+ * @brief Write reservoir storage and outflow time series to a NetCDF file.
+ *
+ * @param filename       Output NetCDF file path.
+ * @param storage        Pointer to 2D storage array (time × reservoirs), m³.
+ * @param outflow        Pointer to 2D outflow array (time × reservoirs), m³/s.
+ * @param time_vals      Pointer to 1D time array, minutes since chunk start.
+ * @param resid_vals     Pointer to 1D reservoir ID array (GDW IDs).
+ * @param n_steps        Number of time steps.
+ * @param n_reservoirs   Number of reservoirs.
+ * @param calendar_str   Calendar string (e.g. "julian").
+ * @param time_string    Chunk start time string for the time units attribute.
+ * @param compression_level Compression level (0 for none).
+ */
+void write_reservoir_netcdf(const std::string& filename,
+                            const float* storage,
+                            const float* outflow,
+                            const int* time_vals,
+                            const int* resid_vals,
+                            int n_steps,
+                            int n_reservoirs,
+                            const std::string& calendar_str,
+                            const std::string& time_string,
+                            int compression_level = 0);

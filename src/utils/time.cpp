@@ -50,3 +50,22 @@ std::string addTimeDelta(const std::string& start, const std::string& calendar, 
 
     return formatTime(tm);
 }
+
+int getMonth(const std::string& datetime, const std::string& calendar) {
+    std::tm tm = parseTime(datetime);
+
+    if (calendar == "julian") {
+        return tm.tm_mon + 1; 
+    } else if (calendar == "no_leap") {
+        static const int monthDays[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+        
+        int day = tm.tm_yday;
+        int month = 0;
+        while (month < 11 && day >= monthDays[month]) {
+            day -= monthDays[month];
+            month++;
+        }
+        return month + 1;
+    }
+    return -1; 
+}
