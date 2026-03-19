@@ -22,7 +22,9 @@ SRC := src/main.cpp \
        src/I_O/output_series.cpp \
        src/I_O/inputs.cpp \
        src/I_O/config_loader.cpp \
-       src/utils/time.cpp
+       src/utils/time.cpp \
+       src/models/reservoir_operation_rules.cpp 
+
 
 # ==== Build and Binary Directories ====
 BUILD_DIR := build
