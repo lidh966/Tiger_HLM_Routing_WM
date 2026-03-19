@@ -61,13 +61,31 @@ void read_node_levels(
         }
 
         // params (semicolon separated)
-        std::getline(ss, token);
+        std::getline(ss, token, ',');
         if (!token.empty()) {
             std::istringstream ps(token);
             while (std::getline(ps, token, ';')) {
                 if (!token.empty())
                     node.params.push_back(std::stod(token));
             }
+        }
+
+        // reservoir flags
+        std::getline(ss, token, ',');
+        if (!token.empty()) {
+            node.res_id = std::stoi(token);
+        }
+        std::getline(ss, token, ',');
+        if (!token.empty()) {
+            node.res_inflow_flag = std::stoi(token);
+        }
+        std::getline(ss, token, ',');
+        if (!token.empty()) {
+            node.res_outflow_flag = std::stoi(token);
+        }
+        std::getline(ss, token);
+        if (!token.empty()) {
+            node.res_within_flag = std::stoi(token);
         }
 
         node_map[node.index] = node;

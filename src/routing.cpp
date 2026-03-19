@@ -457,7 +457,10 @@ static void writeReservoirOutput(const ModelSetup& setup,
                                   const std::vector<int>& sim_times,
                                   const std::string& time_string)
 {
-    if (setup.config.reservoir_routing_flag != 1 || reservoir_states.empty()) return;
+    if (setup.config.reservoir_routing_flag != 1 || reservoir_states.empty()) {
+        std::cout << "Reservoir routing not enabled or no reservoirs found; skipping reservoir output." << std::endl;
+        return;
+    };
 
     std::cout << "  Writing reservoir storage and outflow to netcdf...";
 
@@ -482,7 +485,7 @@ static void writeReservoirOutput(const ModelSetup& setup,
         ++j;
     }
 
-    std::string res_filename = setup.config.series_filepath + "_reservoirs_" + time_string + ".nc";
+    std::string res_filename = setup.config.reservoir_filepath + "_" + time_string + ".nc";
     write_reservoir_netcdf(res_filename,
                            compacted_storage.data(),
                            compacted_outflow.data(),

@@ -340,6 +340,7 @@ ModelConfig ConfigLoader::loadConfig(const std::string& filename) {
     config.snapshot_filepath = parser.getString("output.snapshot_filepath");
     config.max_output = parser.getInt("output.max_output", 0); // Default to 0 if not specified
     config.max_output_filepath = parser.getString("output.max_output_filepath");
+    config.reservoir_filepath = parser.getString("output.reservoir_filepath");
 
     return config;
 }

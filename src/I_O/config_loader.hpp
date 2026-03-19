@@ -63,6 +63,7 @@ struct ModelConfig {
     std::string snapshot_filepath; 
     int max_output; // 0 for no max output, 1 for max output
     std::string max_output_filepath;
+    std::string reservoir_filepath; // only for reservoir output
 
 };
 
