@@ -231,17 +231,54 @@ static std::vector<float> computeReservoirOutflow(ReservoirState& rs,
             rs.storage, month);
         outflow[t]  = q_out / 86400.0f;    // convert outflow back to m³/s for results
 
-        // Explicit storage update
-        rs.storage += static_cast<float>((inflow[t] - outflow[t]) * dt_sec);
+        float updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
+        
+        // // ---- for 1013 ---- //
+        // // 1. Apply constraints to outflow (prioritized)
+        // if (outflow[t] >= 1300.0f && rs.storage < 28330568640.0f) {
+        //     outflow[t] = 1300.0f;
+        //     updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
+        // }
+        
+        // // 2. Apply constraints to storage (after preliminary update)
+        // if ((rs.storage <= 1.0e10f || updated_storage <= 1.0e10f) && outflow[t] > 10.0f) {
+        //     outflow[t] = 10.0f;
+        //     updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
+        // } else if (updated_storage >= 28330568640.0f) {
+        //     outflow[t] += (updated_storage - 28330568640.0f) / static_cast<float>(dt_sec);
+        //     updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
+        // }
 
-        // adjust outflow is storage goes negative (clamp outflow to available storage)
-        if (rs.storage < 0.0f) {
-            outflow[t] += rs.storage / dt_sec;     // reduce outflow to prevent negative storage
-            rs.storage = 0.0f;     // clamp storage to zero
+        // if (updated_storage < 0.0f) {
+        //     outflow[t] += updated_storage / static_cast<float>(dt_sec);
+        //     updated_storage = 0.0f;
+        // }
+
+        // ---- for 1004 ---- //
+        // 1. Apply constraints to outflow (prioritized)
+        if (outflow[t] >= 1300.0f && rs.storage < 23458310589.0f) {
+            outflow[t] = 1300.0f;
+            updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
+        }
+        
+        // 2. Apply constraints to storage (after preliminary update)
+        if ((rs.storage <= 1.0e10f || updated_storage <= 1.0e10f) && outflow[t] > 10.0f) {
+            outflow[t] = 10.0f;
+            updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
+        } else if (updated_storage >= 23458310589.0f) {
+            outflow[t] += (updated_storage - 23458310589.0f) / static_cast<float>(dt_sec);
+            updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
         }
 
-        rs.storage_series[t] = rs.storage;
+        if (updated_storage < 0.0f) {
+            outflow[t] += updated_storage / static_cast<float>(dt_sec);
+            updated_storage = 0.0f;
+        }
+        // ---- end constraints ---- //
+
+        rs.storage_series[t] = updated_storage;
         rs.outflow_series[t] = outflow[t];
+        rs.storage = updated_storage; 
     }
 
     return outflow;
@@ -379,10 +416,10 @@ void IntegrateLinksAtLevel(const ModelSetup& setup,
             // directly to ODE integration below — their y_p_series is already correct.
 
             // ---- within nodes: skip (placeholder for rainfall-on-reservoir) ----
-            if (node.res_within_flag) {
-                // TODO: add rainfall-on-reservoir area logic here.
-                continue;
-            }
+            // if (node.res_within_flag) {
+            //     // TODO: add rainfall-on-reservoir area logic here.
+            //     continue;
+            // }
 
             // ---- outflow node: override y_p_series with reservoir outflow ----
             if (node.res_outflow_flag) {
