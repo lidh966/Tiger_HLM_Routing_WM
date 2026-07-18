@@ -1,5 +1,7 @@
 #pragma once
 
+#include "reservoir_state.hpp"
+
 /**
  * @file reservoir_operation_rules.hpp
  * @brief Dispatch interface for per-reservoir operation rules.
@@ -26,3 +28,8 @@
  * @throws std::runtime_error if res_id has no registered rule.
  */
 float applyReservoirRule(int res_id, float inflow_m3d, float storage_m3, int month);
+
+/*
+ * @brief Retrieve the operational constraints for a given reservoir.
+ */
+ReservoirConstraints getReservoirConstraints(int res_id);

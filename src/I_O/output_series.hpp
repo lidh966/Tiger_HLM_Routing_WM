@@ -79,3 +79,17 @@ void write_reservoir_netcdf(const std::string& filename,
                             const std::string& calendar_str,
                             const std::string& time_string,
                             int compression_level = 0);
+
+/**
+ * @brief Write reservoir storage snapshot (single time step) to a NetCDF file.
+ * @param filename        Output NetCDF file path.
+ * @param storage_vals    Pointer to 1D array of storage values (m³), one per reservoir.
+ * @param resid_vals      Pointer to 1D array of GDW reservoir IDs.
+ * @param n_reservoirs    Number of reservoirs.
+ * @param compression_level Compression level (0 for none).
+ */
+void write_reservoir_snapshot_netcdf(const std::string& filename,
+                                     const float* storage_vals,
+                                     const int* resid_vals,
+                                     int n_reservoirs,
+                                     int compression_level = 0);

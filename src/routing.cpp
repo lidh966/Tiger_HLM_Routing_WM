@@ -171,6 +171,7 @@ static ReservoirStateMap buildReservoirStates(const ModelSetup& setup) {
 
         for (auto& [res_id, rs] : reservoir_states) {
             rs.storage = resStorageIni(res_id);
+            rs.constraints = getReservoirConstraints(res_id);
         }
 
         std::cout << "completed! " << reservoir_states.size() << " reservoir(s) found." << std::endl;
@@ -230,50 +231,38 @@ static std::vector<float> computeReservoirOutflow(ReservoirState& rs,
             inflow[t] * 86400.0f,    // convert m³/s to m³/day for the rule function
             rs.storage, month);
         outflow[t]  = q_out / 86400.0f;    // convert outflow back to m³/s for results
+        
+        const ReservoirConstraints& c = rs.constraints;
 
         float updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
-        
-        // // ---- for 1013 ---- //
-        // // 1. Apply constraints to outflow (prioritized)
-        // if (outflow[t] >= 1300.0f && rs.storage < 28330568640.0f) {
-        //     outflow[t] = 1300.0f;
-        //     updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
-        // }
-        
-        // // 2. Apply constraints to storage (after preliminary update)
-        // if ((rs.storage <= 1.0e10f || updated_storage <= 1.0e10f) && outflow[t] > 10.0f) {
-        //     outflow[t] = 10.0f;
-        //     updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
-        // } else if (updated_storage >= 28330568640.0f) {
-        //     outflow[t] += (updated_storage - 28330568640.0f) / static_cast<float>(dt_sec);
-        //     updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
-        // }
 
-        // if (updated_storage < 0.0f) {
-        //     outflow[t] += updated_storage / static_cast<float>(dt_sec);
-        //     updated_storage = 0.0f;
-        // }
+        // ---- generic constraints (applied to all reservoirs) ---- //
 
-        // ---- for 1004 ---- //
-        // 1. Apply constraints to outflow (prioritized)
-        if (outflow[t] >= 1300.0f && rs.storage < 23458310589.0f) {
-            outflow[t] = 1300.0f;
-            updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
-        }
-        
-        // 2. Apply constraints to storage (after preliminary update)
-        if ((rs.storage <= 1.0e10f || updated_storage <= 1.0e10f) && outflow[t] > 10.0f) {
-            outflow[t] = 10.0f;
-            updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
-        } else if (updated_storage >= 23458310589.0f) {
-            outflow[t] += (updated_storage - 23458310589.0f) / static_cast<float>(dt_sec);
+        // cap outflow if storage is not full
+        if (outflow[t] > c.max_outflow_m3s && rs.storage < c.max_storage_m3) {
+            outflow[t] = c.max_outflow_m3s;
             updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
         }
 
-        if (updated_storage < 0.0f) {
-            outflow[t] += updated_storage / static_cast<float>(dt_sec);
-            updated_storage = 0.0f;
+        // enfore minimum outflow is storage is sufficient
+        if (rs.storage > c.min_storage_m3 && outflow[t] < c.min_outflow_m3s) {
+            outflow[t] = c.min_outflow_m3s;
+            updated_storage = rs.storage + (inflow[t] - outflow[t]) * static_cast<float>(dt_sec);
         }
+
+        // spill if storage exceeds max_storage
+        if (updated_storage > c.max_storage_m3) {
+            outflow[t] += (updated_storage - c.max_storage_m3) / static_cast<float>(dt_sec);
+            updated_storage = c.max_storage_m3;
+        }
+
+        // clamp if storage goes below minimum storage
+        if (updated_storage < c.min_storage_m3) {
+            outflow[t] += (updated_storage - c.min_storage_m3) / static_cast<float>(dt_sec);
+            outflow[t] = std::max(outflow[t], 0.0f);  // clamp to zero if outflow becomes negative due to this adjustment
+            updated_storage = c.min_storage_m3;
+        }
+
         // ---- end constraints ---- //
 
         rs.storage_series[t] = updated_storage;
@@ -480,6 +469,34 @@ void IntegrateLinksAtLevel(const ModelSetup& setup,
 }
 
 /**
+ * @brief Writes reservoir storage value to a NetCDF file (snapshot format, no time dimension).
+ */
+static void saveReservoirSnapshot(const ModelSetup& setup,
+                                  const ReservoirStateMap& reservoir_states,
+                                  const std::string& time_string)
+{
+    if (setup.config.reservoir_routing_flag != 1 || reservoir_states.empty()) return;
+
+    const size_t n_res = reservoir_states.size();
+    std::vector<float> storage_vals(n_res);
+    std::vector<int>   res_ids(n_res);
+
+    size_t j = 0;
+    for (const auto& [res_id, rs] : reservoir_states) {
+        res_ids[j]     = res_id;
+        storage_vals[j] = rs.storage;
+        ++j;
+    }
+
+    std::string filename = setup.config.reservoir_filepath
+                           + "_storage_snapshot_" + time_string + ".nc";
+    write_reservoir_snapshot_netcdf(filename,
+                                    storage_vals.data(),
+                                    res_ids.data(),
+                                    static_cast<int>(n_res));
+}
+
+/**
  * @brief Writes reservoir storage and outflow time series to a netCDF file.
  * Called once per chunk after IntegrateLinksAtLevel has populated
  * storage_series and outflow_series in each ReservoirState.
@@ -632,6 +649,7 @@ void ProcessChunk(const ModelSetup& setup,
     auto write_start = std::chrono::high_resolution_clock::now();
     writeOutput(setup, results, n_steps, sim_times, q_final, time_string);
     writeReservoirOutput(setup, reservoir_states, sim_times, time_string);
+    saveReservoirSnapshot(setup, reservoir_states, time_string);  
     auto write_end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> write_elapsed = write_end - write_start;
     std::cout << "  Total write time: " << write_elapsed.count() << " seconds" << std::endl;

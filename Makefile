@@ -34,7 +34,11 @@ BIN_DIR := bin
 OBJ := $(patsubst src/%.cpp,$(BUILD_DIR)/%.o,$(SRC))
 
 # ==== Executable ====
-BIN := $(BIN_DIR)/routing
+# BIN := $(BIN_DIR)/routing
+# BIN := $(BIN_DIR)/routing_retrain_R0
+# BIN := $(BIN_DIR)/routing_retrain_R3
+# BIN := $(BIN_DIR)/routing_retrain_R5
+BIN := $(BIN_DIR)/routing_R6
 
 # ==== Default Target ====
 all: $(BIN)

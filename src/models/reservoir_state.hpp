@@ -4,6 +4,20 @@
 #include <unordered_map>
 #include <stdexcept>
 #include <string>
+#include <limits>
+
+
+/**
+ * @brief Struct to hold any constraints on reservoir storage or outflow.
+ * Currently, only 4 constraints are defined: max & min storage, max & min outflow.
+ * The implementation of the constraints are in (1) reservoir_operation_rules.hpp/.cpp; (2) routing.cpp within computeReservoirOutflow() logic
+ */
+struct ReservoirConstraints {
+    float max_storage_m3    = std::numeric_limits<float>::max();
+    float min_storage_m3    = 0.0f;
+    float max_outflow_m3s   = std::numeric_limits<float>::max();
+    float min_outflow_m3s   = 0.0f;
+};
 
 /**
  * @struct ReservoirState
@@ -30,6 +44,9 @@ struct ReservoirState {
     // Output time series for the current chunk (sized to n_steps each chunk)
     std::vector<float> storage_series;
     std::vector<float> outflow_series;
+
+    // Add reservoir constraint
+    ReservoirConstraints constraints;
 };
 
 /**

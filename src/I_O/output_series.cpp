@@ -222,3 +222,36 @@ void write_reservoir_netcdf(const std::string& filename,
     // Close
     NC_CHECK(nc_close(ncid));
 }
+
+void write_reservoir_snapshot_netcdf(const std::string& filename,
+                                     const float* storage_vals,
+                                     const int* resid_vals,
+                                     int n_reservoirs,
+                                     int compression_level) {
+    int ncid, res_dimid;
+    int res_varid, storage_varid;
+
+    NC_CHECK(nc_create(filename.c_str(), NC_CLOBBER | NC_NETCDF4, &ncid));
+
+    NC_CHECK(nc_def_dim(ncid, "ReservoirID", n_reservoirs, &res_dimid));
+
+    NC_CHECK(nc_def_var(ncid, "ReservoirID", NC_INT,   1, &res_dimid, &res_varid));
+    NC_CHECK(nc_def_var(ncid, "storage",     NC_FLOAT, 1, &res_dimid, &storage_varid));
+
+    if (compression_level > 0)
+        NC_CHECK(nc_def_var_deflate(ncid, storage_varid, 1, 1, compression_level));
+
+    NC_CHECK(nc_put_att_text(ncid, res_varid,     "long_name",
+        strlen("GDW reservoir ID"), "GDW reservoir ID"));
+    NC_CHECK(nc_put_att_text(ncid, storage_varid, "long_name",
+        strlen("Reservoir storage snapshot"), "Reservoir storage snapshot"));
+    NC_CHECK(nc_put_att_text(ncid, storage_varid, "units",
+        strlen("m^3"), "m^3"));
+
+    NC_CHECK(nc_enddef(ncid));
+
+    NC_CHECK(nc_put_var_int  (ncid, res_varid,     resid_vals));
+    NC_CHECK(nc_put_var_float(ncid, storage_varid, storage_vals));
+
+    NC_CHECK(nc_close(ncid));
+}
